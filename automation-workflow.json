@@ -1,0 +1,486 @@
+{
+  "name": "automation",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "39abb187-3ad8-437c-9f31-07b5740b7cc5",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM leads;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "4de79262-d39c-4b80-91ae-500b782b6ccd",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "CQhR7cHX6bdA6ZBY",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date();\nconst results = [];\n\nfor (const item of $input.all()) {\n  const lead = item.json;\n\n  const lastContact = new Date(lead.last_contact_date);\n  const diffDays = Math.floor((today - lastContact) / (1000 * 60 * 60 * 24));\n\n  let urgencyLevel = null;\n\n  if (diffDays >= 14) {\n    urgencyLevel = 'CRITICAL';\n  } else if (diffDays >= 7) {\n    urgencyLevel = 'HIGH';\n  } else if (diffDays >= 3) {\n    urgencyLevel = 'MEDIUM';\n  }\n\n  if (urgencyLevel) {\n    results.push({\n      json: {\n        ...lead,\n        days_inactive: diffDays,\n        urgency_level: urgencyLevel\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "b2bd657f-b3b8-4528-90cd-72a1e6a6ac08",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.urgency_level }}",
+                    "rightValue": "MEDIUM",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "6377af46-740f-470b-8785-ded4d6f1b16e"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "6abcd03c-2d26-4845-83e3-ead6282b61d8",
+                    "leftValue": "={{ $json.urgency_level }}",
+                    "rightValue": "HIGH",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "53fa108f-2964-47ee-af74-a732bb637e17",
+                    "leftValue": "={{ $json.urgency_level }}",
+                    "rightValue": "CRITICAL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        624,
+        -16
+      ],
+      "id": "365407ce-c8bb-4267-be18-20a61b24446c",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nconst lead = $input.first().json;\n\nlet emailBody = '';\n\nif (lead.urgency_level === 'MEDIUM') {\n  emailBody = `Hi ${lead.salesperson_name},\n\nThis is a reminder that you have not followed up with ${lead.lead_name} from ${lead.company}, ${lead.city} in ${lead.days_inactive} days.\n\nLead Status: ${lead.status}\nDeal Value: INR ${lead.deal_value}\nLast Contact: ${lead.last_contact_date}\n\nPlease take action at the earliest to avoid losing this deal.\n\nRegards,\nSales Automation System`;\n\n} else if (lead.urgency_level === 'HIGH') {\n  emailBody = `Hi ${lead.salesperson_name},\n\nURGENT: ${lead.lead_name} from ${lead.company} has not been contacted in ${lead.days_inactive} days. Your manager has been CC'd on this email.\n\nLead Status: ${lead.status}\nDeal Value: INR ${lead.deal_value}\nLast Contact: ${lead.last_contact_date}\n\nImmediate action is required. Please update the CRM after your follow-up.\n\nRegards,\nSales Automation System`;\n\n} else if (lead.urgency_level === 'CRITICAL') {\n  emailBody = `Dear ${lead.manager_name},\n\nThis is an automated alert. The lead ${lead.lead_name} from ${lead.company} has not been contacted in ${lead.days_inactive} days and has been automatically marked as DEAD in the system.\n\nDeal Value Lost: INR ${lead.deal_value}\nAssigned To: ${lead.salesperson_name}\nLast Contact: ${lead.last_contact_date}\n\nPlease review the pipeline and take necessary action.\n\nRegards,\nSales Automation System`;\n}\n\nreturn [{\n  json: {\n    ...lead,\n    email_body: emailBody\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        -208
+      ],
+      "id": "ce79236d-b8ae-453a-a48e-31ea3347c4cb",
+      "name": "Generate Email Body"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.salesperson_email }}",
+        "subject": "=Follow-up Reminder: {{ $json.lead_name }}",
+        "emailType": "text",
+        "message": "={{ $json.email_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1168,
+        -208
+      ],
+      "id": "1db8295b-8500-4c53-a06b-e386cafbd524",
+      "name": "Send a message",
+      "webhookId": "0ac94002-6081-406c-ad74-cd0341e2761c",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "X5BIckI4H27Au2AG",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $input.first().json;\n\nconst emailBody = `Hi ${lead.salesperson_name},\n\nURGENT: ${lead.lead_name} from ${lead.company} has not been contacted in ${lead.days_inactive} days. Your manager has been CC'd on this email.\n\nLead Status: ${lead.status}\nDeal Value: INR ${lead.deal_value}\nLast Contact: ${lead.last_contact_date}\n\nImmediate action is required. Please update the system after your follow-up.\n\nRegards,\nSales Automation System`;\n\nreturn [{\n  json: {\n    ...lead,\n    email_body: emailBody\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ],
+      "id": "94f1aed2-e244-43eb-affe-ae99dae94408",
+      "name": "Generate Email Body HIGH"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.salesperson_email }}",
+        "subject": "= URGENT: {{ $json.lead_name }} not contacted in {{ $json.days_inactive }} days",
+        "emailType": "text",
+        "message": "={{ $json.email_body }}",
+        "options": {
+          "ccList": "={{ $json.manager_email }}"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1168,
+        0
+      ],
+      "id": "b9735ac6-68a6-442f-aa72-070c2ab02532",
+      "name": "Send a message1",
+      "webhookId": "da830449-caaf-4728-bc20-606d3d7d6159",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "X5BIckI4H27Au2AG",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $input.first().json;\n\nconst emailBody = `Dear ${lead.manager_name},\n\nThis is an automated alert. The lead ${lead.lead_name} from ${lead.company} has not been contacted in ${lead.days_inactive} days and has been automatically marked as DEAD in the system.\n\nDeal Value: INR ${lead.deal_value}\nAssigned Salesperson: ${lead.salesperson_name}\nLast Contact: ${lead.last_contact_date}\n\nPlease review the pipeline and take necessary action.\n\nRegards,\nSales Automation System`;\n\nreturn [{\n  json: {\n    ...lead,\n    email_body: emailBody\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        224
+      ],
+      "id": "4273aaf2-fa38-418f-af23-213e5d9be80a",
+      "name": "Generate Email Body CRITICAL"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.manager_email }}",
+        "subject": "=Lead Auto-Marked Dead: {{ $json.lead_name }} - {{ $json.company }}",
+        "emailType": "text",
+        "message": "={{ $json.email_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1168,
+        224
+      ],
+      "id": "041afd3d-3a10-49d3-b3c6-79d7f6fe4f03",
+      "name": "Send a message2",
+      "webhookId": "c50533de-218c-40ed-9ec8-d10540def111",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "X5BIckI4H27Au2AG",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO reminder_log \n(lead_id, lead_name, salesperson_email, manager_email, escalation_level, days_inactive)\nVALUES (\n  {{ $('Generate Email Body HIGH').item.json.id }},\n  '{{ $('Generate Email Body HIGH').item.json.lead_name }}',\n  '{{ $('Generate Email Body HIGH').item.json.salesperson_email }}',\n  '{{ $('Generate Email Body HIGH').item.json.manager_email }}',\n  '{{ $('Generate Email Body HIGH').item.json.urgency_level }}',\n  {{ $('Generate Email Body HIGH').item.json.days_inactive }}\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1616,
+        0
+      ],
+      "id": "9fbfbe80-82f6-4b22-8a42-16c7fd6bcabd",
+      "name": "logs",
+      "credentials": {
+        "postgres": {
+          "id": "CQhR7cHX6bdA6ZBY",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO reminder_log \n(lead_id, lead_name, salesperson_email, manager_email, escalation_level, days_inactive)\nVALUES (\n  {{ $('Generate Email Body').item.json.id }},\n  '{{ $('Generate Email Body').item.json.lead_name }}',\n  '{{ $('Generate Email Body').item.json.salesperson_email }}',\n  '{{ $('Generate Email Body').item.json.manager_email }}',\n  '{{ $('Generate Email Body').item.json.urgency_level }}',\n  {{ $('Generate Email Body').item.json.days_inactive }}\n);\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1616,
+        -208
+      ],
+      "id": "7f4486ba-4e41-4d69-a4df-2556f6ecd1d4",
+      "name": "logs1",
+      "credentials": {
+        "postgres": {
+          "id": "CQhR7cHX6bdA6ZBY",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO reminder_log \n(lead_id, lead_name, salesperson_email, manager_email, escalation_level, days_inactive)\nVALUES (\n  {{ $('Generate Email Body CRITICAL').item.json.id }},\n  '{{ $('Generate Email Body CRITICAL').item.json.lead_name }}',\n  '{{ $('Generate Email Body CRITICAL').item.json.salesperson_email }}',\n  '{{ $('Generate Email Body CRITICAL').item.json.manager_email }}',\n  '{{ $('Generate Email Body CRITICAL').item.json.urgency_level }}',\n  {{ $('Generate Email Body CRITICAL').item.json.days_inactive }}\n);\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1632,
+        224
+      ],
+      "id": "d5e43639-d14e-49b3-b7ac-7af4e4fd5804",
+      "name": "logs2",
+      "credentials": {
+        "postgres": {
+          "id": "CQhR7cHX6bdA6ZBY",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads \nSET status = 'Dead',\n    reminder_count = reminder_count + 1\nWHERE id = {{ $('Generate Email Body CRITICAL').item.json.id }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1424,
+        224
+      ],
+      "id": "150844ca-2cac-43fe-93a6-d897112d2821",
+      "name": "sql for deletion",
+      "credentials": {
+        "postgres": {
+          "id": "CQhR7cHX6bdA6ZBY",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Generate Email Body",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Email Body HIGH",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Email Body CRITICAL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Email Body": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Email Body HIGH": {
+      "main": [
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Email Body CRITICAL": {
+      "main": [
+        [
+          {
+            "node": "Send a message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message2": {
+      "main": [
+        [
+          {
+            "node": "sql for deletion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "logs1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message1": {
+      "main": [
+        [
+          {
+            "node": "logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sql for deletion": {
+      "main": [
+        [
+          {
+            "node": "logs2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "ef063544-18dc-4979-ba9d-aebbc1c48c0b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9fa1b468be9399bd4630a3720cc3865786f96bdcb7875d531f6fc81cbd040068"
+  },
+  "id": "Boqgwl0JL4uyuygh",
+  "tags": []
+}
